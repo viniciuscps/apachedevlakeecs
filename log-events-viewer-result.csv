@@ -1,0 +1,20 @@
+timestamp,message
+1751487569259,"time=""2025-07-02T20:19:29Z"" level=info msg=""no [.env] file, devlake will read configuration from environment, please make sure you have set correct environment variable."""
+1751487569266,Version:  v1.0.1@e061ef2
+1751487569283,"panic: parse ""mysql://devlake:Priscila"": invalid port "":Priscila"" after host"
+1751487569283,"Wraps: (2) parse ""mysql://devlake:Priscila"""
+1751487569283,"Wraps: (3) invalid port "":Priscila"" after host"
+1751487569283,Error types: (1) *hintdetail.withDetail (2) *url.Error (3) *errors.errorString
+1751487569283,goroutine 1 [running]:
+1751487569283,github.com/apache/incubator-devlake/core/runner.CreateAppBasicRes()
+1751487569283,	/app/core/runner/basic_res.go:50 +0x231
+1751487569283,github.com/apache/incubator-devlake/server/services.InitResources()
+1751487569283,	/app/server/services/init.go:63 +0x7e
+1751487569283,github.com/apache/incubator-devlake/server/services.Init()
+1751487569283,	/app/server/services/init.go:117 +0x1d
+1751487569283,github.com/apache/incubator-devlake/server/api.Init(...)
+1751487569283,	/app/server/api/api.go:58
+1751487569283,github.com/apache/incubator-devlake/server/api.CreateAndRunApiServer()
+1751487569283,	/app/server/api/api.go:79 +0x1a
+1751487569283,main.main()
+1751487569283,	/app/server/main.go:33 +0x36
