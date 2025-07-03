@@ -1,0 +1,405 @@
+# modules/devlake/main.tf - Módulo principal do DevLake
+
+# ECS Cluster
+resource "aws_ecs_cluster" "devlake" {
+  name = "devlake-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+# Service Discovery Namespace
+resource "aws_service_discovery_private_dns_namespace" "devlake" {
+  name        = "devlake-ns"
+  description = "Private DNS namespace for DevLake services"
+  vpc         = var.vpc_id
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+# Service Discovery Services
+resource "aws_service_discovery_service" "devlake" {
+  name = "devlake"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.devlake.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+resource "aws_service_discovery_service" "config_ui" {
+  name = "config-ui"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.devlake.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+resource "aws_service_discovery_service" "grafana" {
+  name = "grafana"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.devlake.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+# Task Definitions
+resource "aws_ecs_task_definition" "devlake" {
+  family                   = "devlake"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "devlake"
+      image = "devlake.docker.scarf.sh/apache/devlake:v1.0.1"
+      
+      portMappings = [
+        {
+          name          = "devlake-port"
+          containerPort = 8080
+          hostPort      = 8080
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        {
+          name  = "DB_URL"
+          value = "mysql://devlake:${var.db_password}@${module.devlake-rds.db_instance_endpoint}:3306/devlake?charset=utf8mb4&parseTime=True&loc=UTC"
+        },
+        {
+          name  = "LOGGING_DIR"
+          value = "/app/logs"
+        },
+        {
+          name  = "TZ"
+          value = "UTC"
+        },
+        {
+          name  = "ENCRYPTION_SECRET"
+          value = var.encryption_secret
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.devlake.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "devlake"
+        }
+      }
+    }
+  ])
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+resource "aws_ecs_task_definition" "config_ui" {
+  family                   = "config-ui"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "config-ui"
+      image = "devlake.docker.scarf.sh/apache/devlake-config-ui:latest"
+      
+      portMappings = [
+        {
+          name          = "config-ui-port"
+          containerPort = 4000
+          hostPort      = 4000
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        {
+          name  = "DEVLAKE_ENDPOINT"
+          value = "devlake.devlake-ns:8080"
+        },
+        {
+          name  = "GRAFANA_ENDPOINT"
+          value = "grafana.devlake-ns:3000"
+        },
+        {
+          name  = "TZ"
+          value = "UTC"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.config_ui.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "config-ui"
+        }
+      }
+    }
+  ])
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+resource "aws_ecs_task_definition" "grafana" {
+  family                   = "grafana"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.grafana_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "grafana"
+      image = "devlake.docker.scarf.sh/apache/devlake-dashboard:v1.0.1"
+      
+      portMappings = [
+        {
+          name          = "grafana-port"
+          containerPort = 3000
+          hostPort      = 3000
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        {
+          name  = "GF_SERVER_ROOT_URL"
+          value = "https://devlake.${var.domain_name}/grafana"
+        },
+        {
+          name  = "TZ"
+          value = "UTC"
+        },
+        {
+          name  = "MYSQL_URL"
+          value = module.devlake-rds.db_instance_endpoint
+        },
+        {
+          name  = "MYSQL_DATABASE"
+          value = "devlake"
+        },
+        {
+          name  = "MYSQL_USER"
+          value = "devlake"
+        },
+        {
+          name  = "MYSQL_PASSWORD"
+          value = var.db_password
+        }
+      ]
+
+      mountPoints = [
+        {
+          sourceVolume  = "grafana-storage"
+          containerPath = "/var/lib/grafana"
+          readOnly      = false
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.grafana.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "grafana"
+        }
+      }
+    }
+  ])
+
+  volume {
+    name = "grafana-storage"
+
+    efs_volume_configuration {
+      file_system_id          = aws_efs_file_system.grafana.id
+      root_directory          = "/"
+      transit_encryption      = "ENABLED"
+      
+      authorization_config {
+        access_point_id = aws_efs_access_point.grafana.id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+# ECS Services
+resource "aws_ecs_service" "devlake" {
+  name            = "devlake"
+  cluster         = aws_ecs_cluster.devlake.id
+  task_definition = aws_ecs_task_definition.devlake.arn
+  desired_count   = 1
+  
+  health_check_grace_period_seconds = 120
+
+  capacity_provider_strategy {
+    base     = 1
+    weight   = 100
+    capacity_provider = "FARGATE_SPOT"
+  }
+
+  network_configuration {
+    subnets          = var.private_subnets
+    security_groups  = [aws_security_group.ecs_tasks.id]
+  }
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.devlake.arn
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # Configuração especial para DevLake - apenas uma instância por vez
+  deployment_maximum_percent         = 100
+  deployment_minimum_healthy_percent = 0
+  propagate_tags                     = "SERVICE"
+
+  tags = {
+    Name = var.tag_name
+  }
+}
+
+resource "aws_ecs_service" "config_ui" {
+  name            = "config-ui"
+  cluster         = aws_ecs_cluster.devlake.id
+  task_definition = aws_ecs_task_definition.config_ui.arn
+  desired_count   = 1
+
+  capacity_provider_strategy {
+    base     = 1
+    weight   = 100
+    capacity_provider = "FARGATE_SPOT"
+  }
+
+  network_configuration {
+    subnets         = var.private_subnets
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.config_ui.arn
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  propagate_tags = "SERVICE"
+
+  tags = {
+    Name = var.tag_name
+  }
+
+  depends_on = [aws_ecs_service.devlake]
+}
+
+resource "aws_ecs_service" "grafana" {
+  name            = "grafana"
+  cluster         = aws_ecs_cluster.devlake.id
+  task_definition = aws_ecs_task_definition.grafana.arn
+  desired_count   = 1
+
+  capacity_provider_strategy {
+    base     = 1
+    weight   = 100
+    capacity_provider = "FARGATE_SPOT"
+  }
+
+  network_configuration {
+    subnets         = var.private_subnets
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.grafana.arn
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  propagate_tags = "SERVICE"
+
+  tags = {
+    Name = var.tag_name
+  }
+
+  depends_on = [aws_ecs_service.devlake, aws_ecs_service.config_ui]
+}
