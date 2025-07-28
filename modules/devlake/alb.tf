@@ -11,6 +11,8 @@ module "devlake_alb" {
   vpc_id          = var.vpc_id
   subnets         = var.public_subnets
   security_groups = [aws_security_group.alb.id]
+  #Adicionada linha abaixo pois o terraform destroy não conseguia remover o recurso
+  enable_deletion_protection = false 
 
   # Listeners
   listeners = {
