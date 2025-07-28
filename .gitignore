@@ -107,3 +107,4 @@ public
 # Temporary folders
 tmp/
 temp/
+change-db-password.sh deploy.sh destroy.sh emergency-fix.sh fix-circuit-breaker.sh fix-db-connection.sh fix-db-url-definitive.sh fix-db-url-final.sh fix-deployment.sh fix-devlake-final.sh fix-rds-subnet-conflict.sh fix-subnet-group.sh fix-terraform-destroy.sh force-cleanup.sh force-fix-db-url.sh increase-resources.sh simple-db-fix.sh
